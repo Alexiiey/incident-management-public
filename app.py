@@ -212,6 +212,14 @@ def render_incident_analyzer(use_llm: bool, api_key: str | None, cost_rules_df: 
         extra_options = sorted(cost_rules_df.loc[cost_rules_df["service_type"] == "Other Service", "item"].unique())
         extra_services = st.multiselect("Additional services involved", extra_options)
 
+        service_cost_override = st.number_input(
+            "Service cost override (€, optional)",
+            min_value=0.0, value=0.0, step=10.0,
+            help="Leave at 0 to auto-calculate from vehicle/service type above. "
+                 "Enter the actual quoted/invoiced fare here to use it directly "
+                 "as the trip value (e.g. for a non-payment case).",
+        )
+
         d1, d2 = st.columns(2)
         driver_name = d1.text_input("Driver / supplier name (optional)")
         auditor_name = d2.text_input("Auditor name (optional)", value="Live Analysis")
@@ -227,6 +235,7 @@ def render_incident_analyzer(use_llm: bool, api_key: str | None, cost_rules_df: 
                 disposal_hours=disposal_hours,
                 extra_services=extra_services,
                 cost_rules_df=cost_rules_df,
+                trip_value_override=service_cost_override if service_cost_override > 0 else None,
                 use_llm=use_llm,
                 api_key=api_key,
             )
@@ -383,6 +392,35 @@ def render_audit_log(df: pd.DataFrame) -> None:
         file_name="audit_compliance_log.csv",
         mime="text/csv",
     )
+
+    saved = st.session_state.get("saved_incidents", [])
+    if saved:
+        st.divider()
+        st.markdown("**Your saved incidents (this session)** — toggle *Resolved* to close a case.")
+        saved_df = pd.DataFrame(saved)[["incident_id", "date", "category", "severity", "client_risk", "resolved"]]
+        edited = st.data_editor(
+            saved_df,
+            column_config={"resolved": st.column_config.CheckboxColumn("Resolved")},
+            disabled=["incident_id", "date", "category", "severity", "client_risk"],
+            hide_index=True,
+            width="stretch",
+            key="saved_incidents_editor",
+        )
+        changed = False
+        for i, row in edited.iterrows():
+            original = st.session_state["saved_incidents"][i]
+            if bool(row["resolved"]) != bool(original["resolved"]):
+                original["resolved"] = bool(row["resolved"])
+                if original["resolved"]:
+                    created = pd.to_datetime(original["date"])
+                    original["resolution_time_hours"] = round(
+                        (pd.Timestamp.now() - created).total_seconds() / 3600, 1
+                    )
+                else:
+                    original["resolution_time_hours"] = None
+                changed = True
+        if changed:
+            st.rerun()
 
 
 # --------------------------------------------------------------------------

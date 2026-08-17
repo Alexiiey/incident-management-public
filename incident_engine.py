@@ -36,65 +36,128 @@ VEHICLE_TYPES: list[str] = [
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "Driver Behavior": [
+        # English
         "rude", "unprofessional", "impolite", "disrespectful", "aggressive",
         "shouted", "yelled", "argument", "attitude", "inappropriate",
         "on the phone", "distracted",
+        # Italiano
+        "maleducato", "scortese", "irrispettoso", "aggressivo", "urlato",
+        "litigio", "atteggiamento", "inappropriato", "al telefono", "distratto",
     ],
     "Booking Error": [
+        # English
         "wrong pickup", "wrong address", "booking error", "double booked",
         "cancelled last minute", "cancelled without notice", "no confirmation",
         "miscommunication", "wrong date", "wrong time", "no response",
-        "did not answer", "didn't answer", "unreachable",
+        "did not answer", "didn't answer", "unreachable", "reassigned",
+        "different driver", "another driver",
+        # Italiano
+        "indirizzo sbagliato", "errore di prenotazione", "doppia prenotazione",
+        "cancellato all'ultimo momento", "cancellato senza preavviso",
+        "nessuna conferma", "incomprensione", "data sbagliata",
+        "orario sbagliato", "nessuna risposta", "non ha risposto",
+        "irraggiungibile", "mai comunicato", "non comunicato", "riassegnato",
+        "altro driver", "altro autista", "nuovo driver", "nuovo autista",
+        "cambio autista", "non era in servizio",
     ],
     "Procedure Missing": [
+        # English
         "procedure", "protocol", "checklist", "sop", "not followed",
         "missing paperwork", "no name board", "no meet and greet",
         "pre-trip check", "confirmation call", "documentation was missing",
+        # Italiano
+        "procedura", "protocollo", "non rispettata", "non seguita",
+        "documentazione mancante", "cartello con il nome", "accoglienza",
+        "chiamata di conferma", "controllo pre-partenza",
     ],
     "Punctuality": [
+        # English
         "late", "delay", "delayed", "no-show", "no show", "did not show",
         "didn't show", "waited", "waiting", "not on time", "extremely late",
         "behind schedule",
+        # Italiano
+        "ritardo", "in ritardo", "non si è presentato", "non presentato",
+        "atteso", "in attesa", "non puntuale", "molto in ritardo",
+        "fuori orario",
     ],
     "Customer Experience": [
+        # English
         "disappointed", "expectations", "overall experience", "neglected",
         "complaint", "subpar", "not satisfied", "could be better",
         "negative experience", "felt rushed",
+        # Italiano
+        "deluso", "aspettative", "esperienza complessiva", "trascurato",
+        "reclamo", "insoddisfatto", "poteva andare meglio",
+        "esperienza negativa", "di fretta",
     ],
     "Safety": [
+        # English
         "accident", "crash", "collision", "injury", "injured", "police",
         "arrested", "assault", "harassment", "unsafe", "speeding",
         "reckless", "hospital", "emergency", "fire", "theft", "stolen",
+        # Italiano
+        "incidente", "scontro", "collisione", "lesione", "ferito", "polizia",
+        "arrestato", "aggressione", "molestia", "pericoloso",
+        "velocità eccessiva", "spericolato", "ospedale", "emergenza",
+        "incendio", "furto", "rubato",
     ],
     "Vehicle Quality": [
+        # English
         "dirty", "smell", "odor", "odour", "stain", "unclean", "messy",
         "damaged", "broken", "old car", "condition", "scratch",
         "mechanical", "breakdown", "broke down", "flat tire",
+        # Italiano
+        "sporco", "odore", "puzza", "macchia", "non pulito", "disordinato",
+        "danneggiato", "rotto", "auto vecchia", "condizione", "graffio",
+        "meccanico", "guasto", "si è guastato", "gomma a terra",
     ],
 }
 
 DEFAULT_CATEGORY = "Customer Experience"
 
 CRITICAL_KEYWORDS = [
+    # English
     "accident", "crash", "collision", "injury", "injured", "police",
     "arrested", "assault", "harassment", "hospital", "emergency", "fire",
     "theft", "stolen", "life-threatening", "critical condition",
+    # Italiano
+    "incidente", "scontro", "collisione", "lesione", "ferito", "polizia",
+    "arrestato", "aggressione", "molestia", "ospedale", "emergenza",
+    "incendio", "furto", "rubato", "grave inconveniente",
 ]
 HIGH_KEYWORDS = [
+    # English
     "no-show", "no show", "did not show", "didn't show",
     "cancelled last minute", "major delay", "very late", "extremely late",
     "unsafe", "reckless", "speeding", "rude", "shouted", "yelled",
     "aggressive", "damaged vehicle", "lost luggage", "left behind",
-    "broke down", "breakdown",
+    "broke down", "breakdown", "refuse to pay", "refuses to pay",
+    "will not pay",
+    # Italiano
+    "non si è presentato", "non presentato", "cancellato all'ultimo momento",
+    "grave ritardo", "molto in ritardo", "pericoloso", "spericolato",
+    "velocità eccessiva", "maleducato", "urlato", "aggressivo",
+    "veicolo danneggiato", "bagagli persi", "non intendiamo pagare",
+    "rifiuta di pagare", "riassegnato",
 ]
 MEDIUM_KEYWORDS = [
+    # English
     "late", "delay", "dirty", "unprofessional", "wrong route", "lost",
     "no response", "overcharged", "cold", "uncomfortable", "smell",
     "messy", "impolite", "miscommunication", "not followed",
+    # Italiano
+    "ritardo", "in ritardo", "sporco", "non professionale",
+    "strada sbagliata", "perso", "nessuna risposta", "sovrapprezzo",
+    "freddo", "scomodo", "odore", "disordinato", "maleducato",
+    "incomprensione", "non rispettata",
 ]
 LOW_KEYWORDS = [
+    # English
     "minor", "slightly", "small issue", "little late", "not a big deal",
     "suggestion", "could be better", "small delay",
+    # Italiano
+    "minore", "leggermente", "piccolo problema", "piccolo ritardo",
+    "non è un grande problema", "suggerimento", "poteva andare meglio",
 ]
 
 SEVERITY_TIERS: list[tuple[str, list[str]]] = [
@@ -108,10 +171,18 @@ SEVERITY_TIERS: list[tuple[str, list[str]]] = [
 # premium/VIP, so these represent *additional* exposure (media, legal,
 # high-profile status) rather than a baseline VIP/non-VIP split.
 ESCALATION_KEYWORDS = [
+    # English
     "media", "press", "lawsuit", "legal action", "public relations",
     "social media", "posted online", "viral", "board member", "diplomat",
     "ambassador", "celebrity", "high-profile", "high profile",
     "repeat client", "key account", "escalated", "regulator",
+    "explanation", "we demand",
+    # Italiano
+    "stampa", "azione legale", "causa legale", "pubbliche relazioni",
+    "pubblicato online", "virale", "membro del consiglio", "diplomatico",
+    "ambasciatore", "celebrità", "alto profilo", "cliente abituale",
+    "cliente chiave", "regolatore", "chiediamo spiegazioni",
+    "chiediamo chiarimenti",
 ]
 
 CLIENT_RISK_ORDER = ["Low", "Medium", "High", "Critical"]
@@ -294,8 +365,14 @@ def compute_trip_value(
     service_type: str,
     disposal_hours: float | None,
     extra_services: list[str] | None,
+    trip_value_override: float | None = None,
 ) -> float:
-    """Estimate the value of the underlying trip from the cost rate card."""
+    """Estimate the value of the underlying trip from the cost rate card,
+    or use `trip_value_override` directly when the auditor knows the exact
+    service cost (e.g. a specific quoted/invoiced fare)."""
+    if trip_value_override is not None and trip_value_override > 0:
+        return round(trip_value_override, 2)
+
     if cost_rules_df is None or cost_rules_df.empty or not vehicle:
         return DEFAULT_TRIP_VALUE_EUR
 
@@ -353,6 +430,7 @@ def analyze_incident_rule_based(
     disposal_hours: float | None = None,
     extra_services: list[str] | None = None,
     cost_rules_df: pd.DataFrame | None = None,
+    trip_value_override: float | None = None,
 ) -> IncidentAnalysis:
     """Classify an incident report using the keyword/regex rules engine."""
     text = re.sub(r"\s+", " ", text or "").strip()
@@ -360,7 +438,9 @@ def analyze_incident_rule_based(
     category, category_matches = _classify_category(text)
     severity, severity_matches, confidence = _classify_severity(text)
     client_risk, escalation_matches = _classify_client_risk(text, severity)
-    trip_value = compute_trip_value(cost_rules_df, vehicle, service_type, disposal_hours, extra_services)
+    trip_value = compute_trip_value(
+        cost_rules_df, vehicle, service_type, disposal_hours, extra_services, trip_value_override
+    )
     financial_impact = _estimate_financial_impact(severity, category, client_risk, trip_value)
     driver_actions, fleet_actions, client_response = build_action_plan(category, severity, client_risk)
 
@@ -442,13 +522,17 @@ def analyze_incident(
     disposal_hours: float | None = None,
     extra_services: list[str] | None = None,
     cost_rules_df: pd.DataFrame | None = None,
+    trip_value_override: float | None = None,
     use_llm: bool = False,
     api_key: str | None = None,
 ) -> IncidentAnalysis:
     """Analyze an incident report, using the LLM engine if requested and
     available, otherwise the deterministic rule-based engine. The trip value
-    (and therefore the financial impact) always uses the local cost rules."""
-    trip_value = compute_trip_value(cost_rules_df, vehicle, service_type, disposal_hours, extra_services)
+    (and therefore the financial impact) always uses the local cost rules,
+    unless `trip_value_override` is supplied (e.g. a known invoiced fare)."""
+    trip_value = compute_trip_value(
+        cost_rules_df, vehicle, service_type, disposal_hours, extra_services, trip_value_override
+    )
 
     if use_llm and api_key:
         try:
@@ -460,11 +544,11 @@ def analyze_incident(
             return result
         except Exception:
             result = analyze_incident_rule_based(
-                text, vehicle, service_type, disposal_hours, extra_services, cost_rules_df
+                text, vehicle, service_type, disposal_hours, extra_services, cost_rules_df, trip_value_override
             )
             result.engine_used = "Rule-Based Engine (LLM call failed, fallback used)"
             return result
 
     return analyze_incident_rule_based(
-        text, vehicle, service_type, disposal_hours, extra_services, cost_rules_df
+        text, vehicle, service_type, disposal_hours, extra_services, cost_rules_df, trip_value_override
     )

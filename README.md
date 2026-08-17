@@ -45,6 +45,12 @@ involved, and the engine returns:
 - A **"Save to Audit Log"** button that appends the analyzed incident into
   the Operations Dashboard and Audit & Compliance Log for the rest of the
   session (see note on persistence below)
+- A **service cost override** field: leave it at 0 to auto-calculate the
+  trip value from the vehicle/service type, or enter the actual
+  quoted/invoiced fare directly (e.g. for a non-payment dispute) to use it
+  as the basis for the financial impact estimate
+- The rule-based engine recognizes both **English and Italian** incident
+  reports out of the box
 
 ### 📊 Operations Dashboard
 Fleet-wide analytics over a synthetic 50-incident dataset (180-day window):
@@ -55,7 +61,10 @@ resolution time, total financial impact).
 ### 📋 Audit & Compliance Log
 A filterable table of the full incident history (category, severity, client
 risk, driver, status) with CSV export — the kind of log an operations/quality
-manager would review before a client or regulatory audit.
+manager would review before a client or regulatory audit. Incidents saved
+from the Live Incident Analyzer appear in a dedicated, editable section
+where you can tick **Resolved** to close a case; the resolution time is
+computed automatically from when it was first saved.
 
 ### 💶 Cost Rules (rate card)
 An editable table in the sidebar (transfer fee and hourly at-disposal rate
