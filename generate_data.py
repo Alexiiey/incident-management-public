@@ -3,6 +3,12 @@
 Running this script writes `data/incidents.csv`, a deterministic (seeded)
 dataset of 50 incidents used by the Streamlit dashboard demo so the app
 works immediately after cloning, with no manual data entry required.
+
+Each row's severity, category, trip value, financial impact and client risk
+are computed by running the generated description text through the SAME
+rule-based engine used by the live "Incident Analyzer" tab
+(`incident_engine.analyze_incident_rule_based`), so the demo dataset and the
+live analyzer are always consistent with one another.
 """
 
 from __future__ import annotations
@@ -13,11 +19,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from incident_engine import CATEGORY_KEYWORDS, DEFAULT_CATEGORY
+from incident_engine import CATEGORY_KEYWORDS, VEHICLE_TYPES, analyze_incident_rule_based
 
 SEED = 42
 N_INCIDENTS = 50
-OUTPUT_PATH = Path(__file__).parent / "data" / "incidents.csv"
+DATA_DIR = Path(__file__).parent / "data"
+OUTPUT_PATH = DATA_DIR / "incidents.csv"
+COST_RULES_PATH = DATA_DIR / "cost_rules.csv"
 
 DRIVERS = [
     "Marco Bellini", "Julien Fontaine", "Ahmed El-Sayed", "Thomas Reeves",
@@ -25,98 +33,168 @@ DRIVERS = [
     "Klaus Richter", "Antoine Dubois", "Rafael Costa", "Viktor Novak",
 ]
 
-VEHICLES = [
-    "Mercedes S-Class", "BMW 7 Series", "Bentley Flying Spur",
-    "Range Rover Autobiography", "Audi A8", "Rolls-Royce Ghost",
-    "Mercedes V-Class (Van)",
-]
-
 CLIENT_TIERS = ["VIP", "Corporate", "Standard"]
-CLIENT_TIER_WEIGHTS = [0.35, 0.35, 0.30]
+CLIENT_TIER_WEIGHTS = [0.55, 0.30, 0.15]
 
-CATEGORIES = list(CATEGORY_KEYWORDS.keys()) + [DEFAULT_CATEGORY]
+CATEGORIES = list(CATEGORY_KEYWORDS.keys())
 SEVERITIES = ["Low", "Medium", "High", "Critical"]
 SEVERITY_WEIGHTS = [0.35, 0.35, 0.22, 0.08]
 
 AUDITORS = ["Sophie Lambert", "Marc Renard", "Elena Rossi", "Daniel Kim"]
 
-DESCRIPTION_TEMPLATES: dict[str, list[str]] = {
-    "Punctuality & No-Show": [
-        "Driver arrived 20 minutes late to the airport pickup.",
-        "Client waited outside the hotel for over 30 minutes, driver was delayed in traffic.",
-        "No-show reported for the 07:00 pickup, client had to book alternative transport.",
-    ],
-    "Vehicle Cleanliness & Condition": [
-        "Client reported a strong smell inside the vehicle and stains on the seats.",
-        "Interior was dirty with visible dust on the dashboard.",
-        "Exterior of the vehicle was not washed, arrived visibly dirty for VIP pickup.",
-    ],
-    "Driver Behavior & Professionalism": [
-        "Client complained the driver was rude and dismissive during the ride.",
-        "Driver was on the phone for most of the trip, appeared unprofessional.",
-        "Client reported an argument with the driver over the route taken.",
-    ],
-    "Safety & Security Incident": [
-        "Minor collision reported while merging onto the highway, no injuries.",
-        "Driver was reported for reckless speeding on a wet road.",
-        "Police were called after a dispute at the pickup location.",
-    ],
-    "Route & Navigation": [
-        "Driver got lost on the way to the venue, added 25 minutes to the trip.",
-        "GPS directed the driver the wrong way, client missed part of the meeting.",
-        "Driver took a much longer route than necessary, client questioned the detour.",
-    ],
-    "Communication & Booking": [
-        "Driver did not respond to the client's calls before pickup.",
-        "Booking confirmation was never sent, client was unsure of pickup time.",
-        "Wrong pickup address was used due to a miscommunication with dispatch.",
-    ],
-    "Amenities & In-Car Service": [
-        "No water bottles available in the vehicle as requested.",
-        "Wifi in the vehicle was not working during the client's business call.",
-        "Air conditioning was not adjusted to the client's preference.",
-    ],
-    "Billing & Pricing Dispute": [
-        "Client was overcharged compared to the quoted fare.",
-        "Invoice included an unexplained extra fee.",
-        "Client requested a refund after being charged twice for the same trip.",
-    ],
-    DEFAULT_CATEGORY: [
-        "General feedback submitted after the trip, no specific issue detailed.",
-        "Client left a neutral review mentioning a minor inconvenience.",
-        "Miscellaneous quality note logged by the auditor during a spot check.",
-    ],
-}
-
-VIP_PREFIXES = [
-    "VIP client feedback: ", "Repeat platinum client reported: ",
-    "Executive client (CEO) noted: ", "",
+ESCALATION_PREFIXES = [
+    "Repeat client noted: ", "Executive client (CEO) noted: ",
+    "Key account feedback: ", "",
 ]
 
+# description templates, organized by category then intended severity.
+# "Medium" is populated for every category and used as the fallback when a
+# given (category, severity) pair has no dedicated template.
+DESCRIPTION_TEMPLATES: dict[str, dict[str, list[str]]] = {
+    "Driver Behavior": {
+        "Low": ["Client felt the driver's attitude was slightly off during the ride."],
+        "Medium": [
+            "Client complained the driver was rude and dismissive during the ride.",
+            "Driver was on the phone for most of the trip, appeared unprofessional.",
+        ],
+        "High": [
+            "Client reported the driver shouted during an argument over the route taken.",
+            "Driver was aggressive and disrespectful when the client raised a concern.",
+        ],
+        "Critical": [
+            "Driver became aggressive and the client had to call for police assistance after a heated argument.",
+        ],
+    },
+    "Booking Error": {
+        "Low": ["A wrong pickup time was noted initially, a minor booking mismatch resolved quickly."],
+        "Medium": [
+            "Wrong pickup address was used due to a miscommunication with dispatch.",
+            "No confirmation was sent for the booking, client was unsure of the pickup time.",
+        ],
+        "High": [
+            "Trip was cancelled last minute without notice, client had to arrange alternative transport.",
+            "Double booked slot meant no vehicle was available for the client's confirmed time.",
+        ],
+        "Critical": [
+            "A booking error caused the client to miss a flight, resulting in a missed connection and an emergency rebooking.",
+        ],
+    },
+    "Procedure Missing": {
+        "Low": ["Driver did not display the name board as per the standard meet and greet procedure."],
+        "Medium": [
+            "Pre-trip vehicle checklist was not completed before the pickup.",
+            "Driver skipped the standard confirmation call before arrival.",
+        ],
+        "High": [
+            "Standard procedure was not followed for a high-profile pickup, protocol was not respected.",
+            "Required documentation was missing at pickup, procedure not followed.",
+        ],
+        "Critical": [
+            "Safety procedure was not followed and led to an emergency situation during the transfer.",
+        ],
+    },
+    "Punctuality": {
+        "Low": ["Small delay of a few minutes, client mentioned it as a minor issue."],
+        "Medium": [
+            "Driver arrived 20 minutes late to the airport pickup.",
+            "Client waited outside the hotel for over 30 minutes, driver was delayed in traffic.",
+        ],
+        "High": [
+            "No-show reported for the 07:00 pickup, client had to book alternative transport.",
+            "Driver was extremely late, over an hour behind schedule.",
+        ],
+        "Critical": [
+            "Driver no-show caused the client to miss a critical business flight, resulting in significant financial loss.",
+        ],
+    },
+    "Customer Experience": {
+        "Low": [
+            "Client left a neutral review mentioning a minor inconvenience.",
+            "Client suggested small improvements for future trips.",
+        ],
+        "Medium": [
+            "Client reported feeling generally disappointed with the overall service level.",
+            "Overall experience did not meet the client's expectations for this service tier.",
+        ],
+        "High": [
+            "Client reported a very negative overall experience and requested to speak with management.",
+            "Client felt neglected throughout the trip and raised a formal complaint.",
+        ],
+        "Critical": [
+            "Client had an extremely negative experience and threatened to escalate the complaint publicly via media.",
+        ],
+    },
+    "Safety": {
+        "Low": ["Minor concern raised about the driver following too closely, which felt slightly unsafe."],
+        "Medium": [
+            "Minor collision reported while merging onto the highway, no injuries.",
+            "Client raised concern about the driver speeding on a wet road.",
+        ],
+        "High": [
+            "Driver was reported for reckless speeding on a wet road.",
+            "Client reported feeling unsafe due to the driver's erratic maneuvers.",
+        ],
+        "Critical": [
+            "A collision occurred causing an injury, police and emergency services were called to the scene.",
+        ],
+    },
+    "Vehicle Quality": {
+        "Low": ["Client noted the vehicle interior was slightly less polished than expected, with a minor scratch visible."],
+        "Medium": [
+            "Client reported a strong smell inside the vehicle and stains on the seats.",
+            "Interior was dirty with visible dust on the dashboard.",
+        ],
+        "High": [
+            "Vehicle broke down during the trip, client had to be transferred to another car.",
+            "Exterior of the vehicle was visibly damaged and not fit for a VIP pickup.",
+        ],
+        "Critical": [
+            "A mechanical failure caused the vehicle to break down on the highway during an emergency hospital transfer.",
+        ],
+    },
+}
 
-def _weighted_choice(options: list[str], weights: list[float]) -> str:
-    return random.choices(options, weights=weights, k=1)[0]
+
+def _pick_description(rng: random.Random, category: str, severity: str) -> str:
+    by_severity = DESCRIPTION_TEMPLATES[category]
+    templates = by_severity.get(severity, by_severity["Medium"])
+    return rng.choice(templates)
 
 
 def generate_incidents(n: int = N_INCIDENTS, seed: int = SEED) -> pd.DataFrame:
     """Build a deterministic synthetic incident dataset."""
     rng = random.Random(seed)
+    cost_rules_df = pd.read_csv(COST_RULES_PATH)
+    extra_options = sorted(cost_rules_df[cost_rules_df["service_type"] == "Other Service"]["item"].unique())
     start_date = datetime.now() - timedelta(days=180)
 
     rows = []
     for i in range(1, n + 1):
-        category = rng.choice(CATEGORIES)
-        severity = rng.choices(SEVERITIES, weights=SEVERITY_WEIGHTS, k=1)[0]
-        description = rng.choice(DESCRIPTION_TEMPLATES[category])
-        vip_prefix = rng.choice(VIP_PREFIXES)
+        intended_category = rng.choice(CATEGORIES)
+        intended_severity = rng.choices(SEVERITIES, weights=SEVERITY_WEIGHTS, k=1)[0]
+        description = _pick_description(rng, intended_category, intended_severity)
+        prefix = rng.choice(ESCALATION_PREFIXES)
+        full_description = f"{prefix}{description}"
+
         driver = rng.choice(DRIVERS)
-        vehicle = rng.choice(VEHICLES)
+        vehicle = rng.choice(VEHICLE_TYPES)
+        service_type = rng.choices(["Transfer", "At Disposal (hourly)"], weights=[0.7, 0.3], k=1)[0]
+        disposal_hours = rng.choice([2, 3, 4, 5, 6]) if service_type == "At Disposal (hourly)" else None
+        n_extras = rng.choice([0, 0, 1, 2])
+        extra_services = rng.sample(extra_options, k=n_extras) if extra_options and n_extras else []
+
         client_tier = rng.choices(CLIENT_TIERS, weights=CLIENT_TIER_WEIGHTS, k=1)[0]
         auditor = rng.choice(AUDITORS)
         incident_date = start_date + timedelta(days=rng.randint(0, 180), hours=rng.randint(0, 23))
 
-        base_impact = {"Low": 60, "Medium": 250, "High": 800, "Critical": 2500}[severity]
-        financial_impact = round(base_impact * rng.uniform(0.7, 1.4), -1)
+        analysis = analyze_incident_rule_based(
+            full_description,
+            vehicle=vehicle,
+            service_type=service_type,
+            disposal_hours=disposal_hours,
+            extra_services=extra_services,
+            cost_rules_df=cost_rules_df,
+        )
 
         resolved = rng.random() > 0.15
         resolution_hours = round(rng.uniform(1, 72), 1) if resolved else None
@@ -127,11 +205,15 @@ def generate_incidents(n: int = N_INCIDENTS, seed: int = SEED) -> pd.DataFrame:
                 "date": incident_date.strftime("%Y-%m-%d %H:%M"),
                 "driver_name": driver,
                 "vehicle_type": vehicle,
+                "service_type": service_type,
+                "disposal_hours": disposal_hours,
                 "client_tier": client_tier,
-                "category": category,
-                "severity": severity,
-                "description": f"{vip_prefix}{description}",
-                "financial_impact_eur": financial_impact,
+                "category": analysis.category,
+                "severity": analysis.severity,
+                "description": full_description,
+                "trip_value_eur": analysis.trip_value_eur,
+                "financial_impact_eur": analysis.financial_impact_eur,
+                "client_risk": analysis.client_risk,
                 "resolved": resolved,
                 "resolution_time_hours": resolution_hours,
                 "auditor": auditor,

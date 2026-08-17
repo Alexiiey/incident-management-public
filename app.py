@@ -7,15 +7,17 @@ analytics dashboard, and an auditable compliance log.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from incident_engine import IncidentAnalysis, analyze_incident
+from incident_engine import VEHICLE_TYPES, IncidentAnalysis, analyze_incident
 
 DATA_PATH = Path(__file__).parent / "data" / "incidents.csv"
+COST_RULES_PATH = Path(__file__).parent / "data" / "cost_rules.csv"
 
 SEVERITY_COLORS = {
     "Critical": "#E4572E",
@@ -24,6 +26,13 @@ SEVERITY_COLORS = {
     "Low": "#4C9A6A",
 }
 SEVERITY_ORDER = ["Low", "Medium", "High", "Critical"]
+
+LOG_COLUMNS = [
+    "incident_id", "date", "driver_name", "vehicle_type", "service_type",
+    "disposal_hours", "client_tier", "category", "severity", "description",
+    "trip_value_eur", "financial_impact_eur", "client_risk", "resolved",
+    "resolution_time_hours", "auditor",
+]
 
 st.set_page_config(
     page_title="VIP Transport - AI Incident & Quality Control",
@@ -48,14 +57,14 @@ def inject_css() -> None:
             height: 100%;
         }
         .kpi-label {
-            font-size: 0.78rem;
+            font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.06em;
             color: #9A9AA2;
             margin-bottom: 0.35rem;
         }
         .kpi-value {
-            font-size: 1.6rem;
+            font-size: 1.45rem;
             font-weight: 700;
             color: #F2F2F2;
         }
@@ -72,14 +81,6 @@ def inject_css() -> None:
             font-size: 0.95rem;
             text-transform: uppercase;
             letter-spacing: 0.04em;
-        }
-        .badge {
-            display: inline-block;
-            padding: 0.15rem 0.6rem;
-            border-radius: 999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: #0E0E10;
         }
         </style>
         """,
@@ -107,14 +108,31 @@ def action_box(title: str, items: list[str]) -> str:
 @st.cache_data
 def load_incidents() -> pd.DataFrame:
     df = pd.read_csv(DATA_PATH, parse_dates=["date"])
-    df["severity"] = pd.Categorical(df["severity"], categories=SEVERITY_ORDER, ordered=True)
     return df
 
 
+@st.cache_data
+def load_default_cost_rules() -> pd.DataFrame:
+    return pd.read_csv(COST_RULES_PATH)
+
+
+def get_combined_incidents(base_df: pd.DataFrame) -> pd.DataFrame:
+    """Base synthetic dataset + any incidents saved from the live analyzer
+    during this session."""
+    saved = st.session_state.get("saved_incidents", [])
+    if saved:
+        saved_df = pd.DataFrame(saved)
+        combined = pd.concat([saved_df, base_df], ignore_index=True, sort=False)
+    else:
+        combined = base_df.copy()
+    combined["severity"] = pd.Categorical(combined["severity"], categories=SEVERITY_ORDER, ordered=True)
+    return combined
+
+
 # --------------------------------------------------------------------------
-# Sidebar - AI engine configuration
+# Sidebar - AI engine & cost rules configuration
 # --------------------------------------------------------------------------
-def render_sidebar() -> tuple[bool, str | None]:
+def render_sidebar() -> tuple[bool, str | None, pd.DataFrame]:
     st.sidebar.header("⚙️ Analysis Engine")
     st.sidebar.caption(
         "The rule-based engine works instantly with no API key. Optionally "
@@ -126,69 +144,149 @@ def render_sidebar() -> tuple[bool, str | None]:
         api_key = st.sidebar.text_input("OpenAI API key", type="password")
         if not api_key:
             st.sidebar.warning("No API key provided — falling back to the rule-based engine.")
+
+    st.sidebar.divider()
+    st.sidebar.subheader("💶 Cost Rules (rate card)")
+    st.sidebar.caption(
+        "Transfer/at-disposal rates and additional service fees used to "
+        "estimate the value of the affected trip. Edit freely for this session."
+    )
+    if "cost_rules" not in st.session_state:
+        st.session_state["cost_rules"] = load_default_cost_rules().copy()
+    edited_rules = st.sidebar.data_editor(
+        st.session_state["cost_rules"],
+        num_rows="dynamic",
+        width="stretch",
+        key="cost_rules_editor",
+        hide_index=True,
+    )
+    st.session_state["cost_rules"] = edited_rules
+
     st.sidebar.divider()
     st.sidebar.caption(
         "**VIP Transport QC** demonstrates an operations quality-control "
         "workflow: incident triage, fleet analytics, and compliance audit "
         "logging for a luxury chauffeur (NCC) business."
     )
-    return use_llm, api_key
+    return use_llm, api_key, edited_rules
 
 
 # --------------------------------------------------------------------------
 # Tab 1 - Live Incident Analyzer
 # --------------------------------------------------------------------------
-def render_incident_analyzer(use_llm: bool, api_key: str | None) -> None:
+def render_incident_analyzer(use_llm: bool, api_key: str | None, cost_rules_df: pd.DataFrame) -> None:
     st.subheader("Live Incident Analyzer")
     st.caption(
         "Paste a raw incident report, driver note, or customer review below. "
         "The engine classifies severity, category, financial exposure, and "
-        "VIP reputational risk, then drafts an operational action plan."
+        "client risk, then drafts an operational action plan."
     )
 
     example = (
-        "VIP client feedback: The driver was 25 minutes late for the airport "
-        "pickup and was noticeably rude when the client raised the issue. "
-        "The client is a repeat platinum account."
+        "Repeat client noted: The driver was 25 minutes late for the airport "
+        "pickup and was noticeably rude when the client raised the issue."
     )
-    text = st.text_area("Incident report / customer review", value="", height=140, placeholder=example)
 
-    col_btn, col_example = st.columns([1, 3])
-    analyze_clicked = col_btn.button("Analyze Incident", type="primary")
-    if col_example.button("Load example"):
-        st.session_state["_example_loaded"] = example
+    if "incident_text" not in st.session_state:
+        st.session_state["incident_text"] = ""
+
+    if st.button("Load example"):
+        st.session_state["incident_text"] = example
         st.rerun()
 
-    if "_example_loaded" in st.session_state and not text:
-        text = st.session_state.pop("_example_loaded")
-        st.info("Example loaded above — click **Analyze Incident** to run it.")
+    text = st.text_area(
+        "Incident report / customer review",
+        key="incident_text",
+        height=140,
+        placeholder=example,
+    )
 
-    if not analyze_clicked:
+    with st.expander("Trip & cost details", expanded=True):
+        c1, c2, c3 = st.columns(3)
+        vehicle_options = sorted(cost_rules_df.loc[cost_rules_df["service_type"] == "Transfer", "item"].unique())
+        vehicle = c1.selectbox("Vehicle type", vehicle_options or VEHICLE_TYPES)
+        service_type = c2.selectbox("Service type", ["Transfer", "At Disposal (hourly)"])
+        disposal_hours = None
+        if service_type == "At Disposal (hourly)":
+            disposal_hours = c3.number_input("Hours at disposal", min_value=1, value=3, step=1)
+        extra_options = sorted(cost_rules_df.loc[cost_rules_df["service_type"] == "Other Service", "item"].unique())
+        extra_services = st.multiselect("Additional services involved", extra_options)
+
+        d1, d2 = st.columns(2)
+        driver_name = d1.text_input("Driver / supplier name (optional)")
+        auditor_name = d2.text_input("Auditor name (optional)", value="Live Analysis")
+
+    if st.button("Analyze Incident", type="primary"):
+        if not text.strip():
+            st.warning("Please paste an incident report before analyzing.")
+        else:
+            result = analyze_incident(
+                text,
+                vehicle=vehicle,
+                service_type=service_type,
+                disposal_hours=disposal_hours,
+                extra_services=extra_services,
+                cost_rules_df=cost_rules_df,
+                use_llm=use_llm,
+                api_key=api_key,
+            )
+            st.session_state["last_result"] = result
+            st.session_state["last_context"] = {
+                "text": text,
+                "vehicle": vehicle,
+                "service_type": service_type,
+                "disposal_hours": disposal_hours,
+                "driver_name": driver_name,
+                "auditor_name": auditor_name,
+            }
+
+    result: IncidentAnalysis | None = st.session_state.get("last_result")
+    if result is None:
         return
 
-    if not text.strip():
-        st.warning("Please paste an incident report before analyzing.")
-        return
-
-    result: IncidentAnalysis = analyze_incident(text, use_llm=use_llm, api_key=api_key)
+    ctx = st.session_state.get("last_context", {})
     st.caption(f"Engine used: **{result.engine_used}** · Confidence: **{result.confidence}**")
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.markdown(kpi_card("Severity", result.severity, SEVERITY_COLORS.get(result.severity, "#C9A227")), unsafe_allow_html=True)
     c2.markdown(kpi_card("Category", result.category), unsafe_allow_html=True)
-    c3.markdown(kpi_card("Est. Financial Impact", f"€{result.financial_impact_eur:,.0f}"), unsafe_allow_html=True)
-    c4.markdown(kpi_card("VIP Client Risk", result.vip_risk, SEVERITY_COLORS.get(result.vip_risk, "#C9A227")), unsafe_allow_html=True)
+    c3.markdown(kpi_card("Trip Value", f"€{result.trip_value_eur:,.0f}"), unsafe_allow_html=True)
+    c4.markdown(kpi_card("Est. Financial Impact", f"€{result.financial_impact_eur:,.0f}"), unsafe_allow_html=True)
+    c5.markdown(kpi_card("Client Risk", result.client_risk, SEVERITY_COLORS.get(result.client_risk, "#C9A227")), unsafe_allow_html=True)
 
     st.write("")
     st.markdown("#### Operational Action Plan")
     a1, a2, a3 = st.columns(3)
     a1.markdown(action_box("Driver Actions", result.driver_actions), unsafe_allow_html=True)
     a2.markdown(action_box("Fleet / Operations Actions", result.fleet_actions), unsafe_allow_html=True)
-    a3.markdown(action_box("VIP Client Response", [result.client_response]), unsafe_allow_html=True)
+    a3.markdown(action_box("Client Response", [result.client_response]), unsafe_allow_html=True)
 
     if result.matched_keywords:
         with st.expander("Why this classification? (matched signals)"):
             st.write(", ".join(f"`{kw}`" for kw in result.matched_keywords))
+
+    st.write("")
+    if st.button("💾 Save to Audit Log"):
+        row = {
+            "incident_id": f"LIVE-{datetime.now():%Y%m%d%H%M%S}",
+            "date": pd.Timestamp.now(),
+            "driver_name": ctx.get("driver_name") or "Unknown",
+            "vehicle_type": ctx.get("vehicle"),
+            "service_type": ctx.get("service_type"),
+            "disposal_hours": ctx.get("disposal_hours"),
+            "client_tier": "VIP",
+            "category": result.category,
+            "severity": result.severity,
+            "description": ctx.get("text", ""),
+            "trip_value_eur": result.trip_value_eur,
+            "financial_impact_eur": result.financial_impact_eur,
+            "client_risk": result.client_risk,
+            "resolved": False,
+            "resolution_time_hours": None,
+            "auditor": ctx.get("auditor_name") or "Live Analysis",
+        }
+        st.session_state.setdefault("saved_incidents", []).append(row)
+        st.success("Saved — check the Operations Dashboard and Audit & Compliance Log tabs.")
 
 
 # --------------------------------------------------------------------------
@@ -196,7 +294,7 @@ def render_incident_analyzer(use_llm: bool, api_key: str | None) -> None:
 # --------------------------------------------------------------------------
 def render_operations_dashboard(df: pd.DataFrame) -> None:
     st.subheader("Operations Dashboard")
-    st.caption("Fleet-wide view of the synthetic incident dataset (50 records, last 180 days).")
+    st.caption(f"Fleet-wide view of {len(df)} incidents (synthetic demo dataset + any incidents saved this session).")
 
     total = len(df)
     critical = int((df["severity"] == "Critical").sum())
@@ -256,15 +354,17 @@ def render_audit_log(df: pd.DataFrame) -> None:
     st.subheader("Audit & Compliance Log")
     st.caption("Filterable history of quality control checks and incident audits.")
 
-    f1, f2, f3, f4 = st.columns(4)
+    f1, f2, f3, f4, f5 = st.columns(5)
     categories = f1.multiselect("Category", sorted(df["category"].unique()), default=sorted(df["category"].unique()))
     severities = f2.multiselect("Severity", SEVERITY_ORDER, default=SEVERITY_ORDER)
-    drivers = f3.multiselect("Driver", sorted(df["driver_name"].unique()), default=sorted(df["driver_name"].unique()))
-    resolved_filter = f4.selectbox("Status", ["All", "Resolved", "Open"])
+    client_risks = f3.multiselect("Client Risk", SEVERITY_ORDER, default=SEVERITY_ORDER)
+    drivers = f4.multiselect("Driver", sorted(df["driver_name"].dropna().unique()), default=sorted(df["driver_name"].dropna().unique()))
+    resolved_filter = f5.selectbox("Status", ["All", "Resolved", "Open"])
 
     filtered = df[
         df["category"].isin(categories)
         & df["severity"].isin(severities)
+        & df["client_risk"].isin(client_risks)
         & df["driver_name"].isin(drivers)
     ]
     if resolved_filter == "Resolved":
@@ -290,7 +390,7 @@ def render_audit_log(df: pd.DataFrame) -> None:
 # --------------------------------------------------------------------------
 def main() -> None:
     inject_css()
-    use_llm, api_key = render_sidebar()
+    use_llm, api_key, cost_rules_df = render_sidebar()
 
     st.title("🚘 VIP Transport — AI Incident & Quality Control System")
     st.caption("Operations quality control, incident triage and compliance auditing for luxury chauffeur services.")
@@ -298,13 +398,13 @@ def main() -> None:
     tab1, tab2, tab3 = st.tabs(["🔍 Live Incident Analyzer", "📊 Operations Dashboard", "📋 Audit & Compliance Log"])
 
     with tab1:
-        render_incident_analyzer(use_llm, api_key)
+        render_incident_analyzer(use_llm, api_key, cost_rules_df)
 
-    df = load_incidents()
+    combined_df = get_combined_incidents(load_incidents())
     with tab2:
-        render_operations_dashboard(df)
+        render_operations_dashboard(combined_df)
     with tab3:
-        render_audit_log(df)
+        render_audit_log(combined_df)
 
 
 if __name__ == "__main__":

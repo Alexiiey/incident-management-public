@@ -1,0 +1,20 @@
+service_type,item,cost_eur,unit
+Transfer,Mercedes S-Class,180,per transfer
+Transfer,BMW 7 Series,180,per transfer
+Transfer,Audi A8,170,per transfer
+Transfer,Range Rover Autobiography,220,per transfer
+Transfer,Bentley Flying Spur,350,per transfer
+Transfer,Rolls-Royce Ghost,650,per transfer
+Transfer,Mercedes V-Class (Van),200,per transfer
+Disposal,Mercedes S-Class,90,per hour
+Disposal,BMW 7 Series,90,per hour
+Disposal,Audi A8,85,per hour
+Disposal,Range Rover Autobiography,110,per hour
+Disposal,Bentley Flying Spur,180,per hour
+Disposal,Rolls-Royce Ghost,320,per hour
+Disposal,Mercedes V-Class (Van),100,per hour
+Other Service,Meet & Greet,40,flat fee
+Other Service,Extra Waiting Time,35,per hour
+Other Service,Multilingual Driver,60,flat fee
+Other Service,Security Escort,300,flat fee
+Other Service,Child Seat,20,flat fee

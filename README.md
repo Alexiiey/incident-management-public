@@ -28,15 +28,23 @@ triage system can:
 ## Features
 
 ### 🔍 Live Incident Analyzer
-Paste any free-text incident report or customer review. The engine returns:
+Paste any free-text incident report or customer review, pick the vehicle/service
+involved, and the engine returns:
 - Severity (Low / Medium / High / Critical)
-- Category (punctuality, cleanliness, driver behavior, safety, route,
-  communication, amenities, billing…)
-- Estimated financial impact (EUR)
-- VIP client reputational risk
+- Category (Driver Behavior, Booking Error, Procedure Missing, Punctuality,
+  Customer Experience, Safety, Vehicle Quality)
+- Trip value, computed from an editable **cost rate card** (transfer fee or
+  hourly at-disposal rate by vehicle type, plus optional extra services)
+- Estimated financial impact (EUR), derived from the trip value and severity
+- **Client Risk** — every client at this operation is premium/VIP-tier by
+  definition, so risk reflects severity plus reputational-escalation signals
+  (media, legal, high-profile mentions), not whether a client "is VIP"
 - A three-part action plan: **driver actions**, **fleet/operations actions**,
-  and a **recommended VIP client response**
+  and a **recommended client response**
 - Transparency panel showing which keywords/signals drove the classification
+- A **"Save to Audit Log"** button that appends the analyzed incident into
+  the Operations Dashboard and Audit & Compliance Log for the rest of the
+  session (see note on persistence below)
 
 ### 📊 Operations Dashboard
 Fleet-wide analytics over a synthetic 50-incident dataset (180-day window):
@@ -45,9 +53,23 @@ incident count, plus headline KPIs (total incidents, critical count, average
 resolution time, total financial impact).
 
 ### 📋 Audit & Compliance Log
-A filterable table of the full incident history (category, severity, driver,
-status) with CSV export — the kind of log an operations/quality manager would
-review before a client or regulatory audit.
+A filterable table of the full incident history (category, severity, client
+risk, driver, status) with CSV export — the kind of log an operations/quality
+manager would review before a client or regulatory audit.
+
+### 💶 Cost Rules (rate card)
+An editable table in the sidebar (transfer fee and hourly at-disposal rate
+per vehicle type, plus flat fees for extra services like Meet & Greet or
+Security Escort) that drives the trip-value and financial-impact estimates.
+Defaults live in `data/cost_rules.csv`; edits made in the sidebar apply for
+the current session only.
+
+### Note on data persistence
+Streamlit Community Cloud has no persistent disk, so incidents saved via
+"Save to Audit Log" (and cost-rule edits) live only for the current browser
+session and reset when the app restarts — by design, this is a live demo
+sandbox, not a production database. The synthetic `data/incidents.csv`
+dataset itself is unaffected and always reloads on restart.
 
 ## How the AI engine works
 
@@ -81,9 +103,10 @@ architecture.
 ```
 vip-transport-incident-qc/
 ├── app.py                 # Streamlit app: 3 tabs (Analyzer, Dashboard, Audit Log)
-├── incident_engine.py      # Classification rules, financial model, action plans
+├── incident_engine.py      # Classification rules, cost model, action plans
 ├── generate_data.py         # Generates the synthetic 50-incident dataset
 ├── data/incidents.csv       # Pre-generated demo dataset (deterministic, seeded)
+├── data/cost_rules.csv      # Default rate card (vehicle transfer/disposal + extras)
 ├── requirements.txt
 └── .streamlit/config.toml   # Dark/luxury theme
 ```
